@@ -3,3 +3,5 @@
 ContactApp/*
 RemoteSystemsTempFiles/*
 Servers/*
+Bamboo/build/*
+Bamboo/bin/*
