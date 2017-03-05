@@ -10,7 +10,7 @@ public interface ResourceManager<T>{
 	
 	public T getFromId(String id);
 	
-	public List<T> get(SearchCriteria sc);
+	public List<T> get(SearchCriteria filters, SearchCriteria sortCriteria, int batchSize, int startIndex);
 	
 	public String save(T t);
 	

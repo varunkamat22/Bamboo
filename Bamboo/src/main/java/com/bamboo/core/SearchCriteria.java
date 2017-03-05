@@ -3,7 +3,7 @@ package com.bamboo.core;
 public class SearchCriteria {
 
 	public static enum FilterOperations {
-		EQUALS, NOT_EQUALS, STARTS_WITH, ENDS_WITH, CONTAINS, GREATER_THAN, LESS_THAN, AND, OR
+		EQUALS, NOT_EQUALS, STARTS_WITH, ENDS_WITH, CONTAINS, GREATER_THAN, LESS_THAN, AND, OR, SORTBY
 	}
 
 	private Object leftOperand;

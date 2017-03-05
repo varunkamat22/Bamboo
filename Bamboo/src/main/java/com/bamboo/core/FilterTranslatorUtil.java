@@ -91,5 +91,13 @@ public class FilterTranslatorUtil {
 			throw new RuntimeException("Incorrect filter condition");
 		}
 	}
-
+	
+	public static SearchCriteria translateSortFilter(String sortCondition){
+		String[] parts = sortCondition.split(" ");
+		if(parts.length < 2 || !(parts[1].equals("asc") || parts[1].equals("desc"))){
+			throw new RuntimeException("Incorrect sort condition");
+		}
+		return new SearchCriteria(parts[0], FilterOperations.SORTBY, parts[1]);
+	}
+	
 }
