@@ -1,4 +1,4 @@
-package com.bamboo.core;
+package com.bamboo.config;
 
 import javax.validation.Validator;
 

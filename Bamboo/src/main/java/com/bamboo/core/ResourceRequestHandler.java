@@ -1,10 +1,7 @@
 package com.bamboo.core;
 
-import java.util.Set;
-
+import java.util.List;
 import javax.servlet.http.HttpServletRequest;
-import javax.validation.ConstraintViolation;
-import javax.validation.Validator;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -19,55 +16,62 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import com.bamboo.config.ApplicationConfiguration;
+import com.bamboo.core.util.ResourceConstants;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.bamboo.core.util.FilterTranslatorUtil;
+import com.bamboo.core.util.ResourceRequestHandlerUtil;
+import com.bamboo.core.util.HttpErrorHelperUtil;
 
-@Component
+@Component(value="ResourceRequestHandler")
 @Path("/")
 public class ResourceRequestHandler {
 	
-	@Autowired
-	private ResourceRegistry registry;
+	@Autowired(required = true)
+	private ResourceRegistry resourceRegistry;
 	
-	@Autowired
+	@Autowired(required = true)
 	private ApplicationConfiguration applicationConfiguration;
 	
 	@Autowired(required = false)
 	private MessageLocalizer messageLocalizer;
 	
-	/**
-	 * This should handle get by ID
-	 */
+
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@GET
-	public Response get(@PathParam("resourceName") String resourceName, @PathParam("id") String id, @Context HttpServletRequest request){
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
-		Gson gson = new Gson();
+	public Response getFromID(@PathParam("resourceName") String resourceName, @PathParam("id") String id, @Context HttpServletRequest request){
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
-			return Response.status(404).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
+		else
+			try{
+				return HttpErrorHelperUtil.getSuccessResponse(resourceManager.getFromId(id));
+			}catch(Exception e){
+				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
+			}
+	}
+	
+
+	@SuppressWarnings("rawtypes")
+	private Response bulkSearch(String resourceName){
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
+		if(resourceManager == null)
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			return Response.status(200).entity(gson.toJson(resourceManager.getFromId(id))).build();
+			ListResponse listResponse = new ListResponse(resourceManager.get(null, null, 0, 0));
+			try{
+				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
+			}catch(Exception e){
+				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
+			}
 		}
 	}
 	
 
-	private Response bulkSearch(String resourceName){
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
-		Gson gson = new Gson();
-		if(resourceManager == null)
-			return Response.status(404).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
-		else{
-			ListResponse listResponse = new ListResponse(resourceManager.get(null, null, 0, 0));
-			return Response.status(200).entity(gson.toJson(listResponse)).build();
-		}
-	}
-	
-	/**
-	 * This should handle get by ID
-	 */
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -76,46 +80,53 @@ public class ResourceRequestHandler {
 		if(filter == null && sortBy == null && batchSize == 0 && startIndex == 0){
 			return bulkSearch(resourceName);
 		}
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		
-		Gson gson = new Gson();
 		if(resourceManager == null)
-			return Response.status(404).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			if(resourceManager.getSupportedFilters() == null)
-				return Response.status(404).entity(gson.toJson(HttpError.get404Error("Filters are not supported for this resource"))).build();
-			
-			SearchCriteria searchCriteria = filter != null ? new FilterTranslatorUtil(resourceManager.getSupportedFilters()).translate(null, filter.split(" ")) : null;
-			SearchCriteria sortCriteria = sortBy != null ? FilterTranslatorUtil.translateSortFilter(sortBy) : null;
-			return Response.status(200).entity(gson.toJson(resourceManager.get(searchCriteria, sortCriteria, batchSize, startIndex))).build();
+			if(resourceManager.getSupportedFilters() == null){
+				return HttpErrorHelperUtil.getBadRequestResponse(String.format(ResourceConstants.FILTERS_NOT_SUPPORTED, resourceName));
+			}else{
+				try{
+					SearchCriteria searchCriteria = filter != null ? new FilterTranslatorUtil(resourceManager.getSupportedFilters()).translateSearchQuery(null, filter.split(ResourceConstants.FILTER_SEPERATOR)) : null;
+					SearchCriteria sortCriteria = sortBy != null ? FilterTranslatorUtil.translateSortQuery(sortBy) : null;
+					return HttpErrorHelperUtil.getSuccessResponse(resourceManager.get(searchCriteria, sortCriteria, batchSize, startIndex));
+				}catch(Exception e){
+					return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
+				}
+			}
 		}
 	}
 	
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	@POST
-	public Response save(@PathParam("resourceName") String resourceName, String jsonResource, @Context HttpServletRequest request){
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
-		Gson gson = new Gson();
+	public Response save(@PathParam("resourceName") String resourceName, String postResource, @Context HttpServletRequest request){
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
+		
 		if(resourceManager == null)
-			return Response.status(404).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			JsonObject jsonObject = new JsonParser().parse(jsonResource).getAsJsonObject();
-			Object resource = gson.fromJson(jsonObject.get("resource"), resourceManager.getResourceClass());
-			Validator validator = applicationConfiguration.getValidator();
-			if(validator != null){
-				Set<ConstraintViolation<Object>> constraintViolations = validator.validate(resource);
-				if(constraintViolations.size() > 0){
-					HttpError validationError = HttpError.get404Error();
-					constraintViolations.forEach(constraint -> {
-						validationError.addToErrorMessages(messageLocalizer != null ? messageLocalizer.getMessage(constraint.getMessage() , request.getLocale()) : constraint.getMessage());
-					});
-					return Response.status(400).entity(gson.toJson(validationError)).build();
-				}
+			if(postResource == null || postResource.isEmpty())
+				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.BLANK_POST_REQUEST);
+			
+			JsonObject postObject = new JsonParser().parse(postResource).getAsJsonObject();
+			Object resource = new Gson().fromJson(postObject.get(ResourceConstants.POST_ROOT_TAG), resourceManager.getResourceClass());
+			
+			if(resource == null)
+				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
+			List<String> messages = ResourceRequestHandlerUtil.validateResource(resource, applicationConfiguration.getValidator(), messageLocalizer, request.getLocale());
+			if(!messages.isEmpty()){
+				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
-			return Response.status(200).entity(gson.toJson(resourceManager.save(resourceManager.getResourceClass().cast(resource)))).build();
+			try{
+				return HttpErrorHelperUtil.getCreationSuccessResponse((resourceManager.save(resourceManager.getResourceClass().cast(resource))));
+			}catch(Exception e){
+				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
+			}
 		}
 	}
 	
@@ -124,13 +135,16 @@ public class ResourceRequestHandler {
 	@Produces(MediaType.APPLICATION_JSON)
 	@DELETE
 	public Response delete(@PathParam("resourceName") String resourceName, @PathParam("id") String id){
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
-		Gson gson = new Gson();
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
-			return Response.status(400).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			resourceManager.delete(id);
-			return Response.status(404).entity("").build();
+			try{
+				resourceManager.delete(id);
+				return HttpErrorHelperUtil.getNoContentResponse();
+			}catch(Exception e){
+				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
+			}
 		}
 	}
 	
@@ -139,29 +153,31 @@ public class ResourceRequestHandler {
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	@PUT
-	public Response update(@PathParam("resourceName") String resourceName, String jsonResource, @Context HttpServletRequest request, @PathParam("id") String id){
-		ResourceManager resourceManager = registry.getResourceManager(resourceName);
-		Gson gson = new Gson();
+	public Response update(@PathParam("resourceName") String resourceName, String postResource, @Context HttpServletRequest request, @PathParam("id") String id){
+		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
-			return Response.status(404).entity(gson.toJson(HttpError.get404Error("Resource not found"))).build();
+			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			JsonObject jsonObject = (JsonObject) new JsonParser().parse(jsonResource).getAsJsonObject().get("resource");
-			Object resource = resourceManager.getFromId(id);
-			Object updatedResource = RequestResourceHandlerUtil.updateFromPUTRequest(resource, jsonObject);
+			if(postResource == null || postResource.isEmpty())
+				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.BLANK_POST_REQUEST);
 			
-			Validator validator = applicationConfiguration.getValidator();
-			if(validator != null){
-				Set<ConstraintViolation<Object>> constraintViolations = validator.validate(updatedResource);
-				if(constraintViolations.size() > 0){
-					HttpError validationError = HttpError.get404Error();
-					constraintViolations.forEach(constraint -> {
-						validationError.addToErrorMessages(messageLocalizer != null ? messageLocalizer.getMessage(constraint.getMessage() , request.getLocale()) : constraint.getMessage());
-					});
-					return Response.status(400).entity(gson.toJson(validationError)).build();
+			JsonObject postObject = new JsonParser().parse(postResource).getAsJsonObject();
+			JsonObject resource = (JsonObject) postObject.get(ResourceConstants.POST_ROOT_TAG);
+			if(resource == null)
+				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
+			
+			try{
+				Object originalResource = resourceManager.getFromId(id);
+				Object updatedResource = ResourceRequestHandlerUtil.updateResourceFromRequest(originalResource, resource);
+				
+				List<String> messages = ResourceRequestHandlerUtil.validateResource(updatedResource, applicationConfiguration.getValidator(), messageLocalizer, request.getLocale());
+				if(!messages.isEmpty()){
+					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
+				return HttpErrorHelperUtil.getSuccessResponse(resourceManager.update(updatedResource));
+			}catch(Exception e){
+				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
-			
-			return Response.status(200).entity(gson.toJson(updatedResource)).build();
 		}
 	}
 	
@@ -170,4 +186,5 @@ public class ResourceRequestHandler {
 	public String test(){
 		return "Hello World";
 	}
+	
 }
