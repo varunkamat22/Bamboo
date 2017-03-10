@@ -12,7 +12,7 @@ public interface ResourceManager<T>{
 	
 	public List<T> get(SearchCriteria filters, SearchCriteria sortCriteria, int batchSize, int startIndex);
 	
-	public String save(T t);
+	public T save(T t);
 	
 	public T update(T t);
 	

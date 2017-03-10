@@ -1,6 +1,6 @@
 package com.bamboo.core;
 
-public class SearchCriteria {
+public final class SearchCriteria {
 
 	public static enum FilterOperations {
 		EQUALS, NOT_EQUALS, STARTS_WITH, ENDS_WITH, CONTAINS, GREATER_THAN, LESS_THAN, AND, OR, SORTBY

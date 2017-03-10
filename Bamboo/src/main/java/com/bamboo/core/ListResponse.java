@@ -2,12 +2,12 @@ package com.bamboo.core;
 
 import java.util.List;
 
-public class ListResponse {
+public class ListResponse<T>{
 
 	private int totalCount;
-	private List results;
+	private List<T> results;
 
-	public ListResponse(List results) {
+	public ListResponse(List<T> results) {
 		this.results = results;
 		totalCount = results == null ? 0 : results.size();
 	}
@@ -20,11 +20,11 @@ public class ListResponse {
 		this.totalCount = totalCount;
 	}
 
-	public List getSearchResult() {
+	public List<T> getSearchResult() {
 		return results;
 	}
 
-	public void setSearchResult(List results) {
+	public void setSearchResult(List<T> results) {
 		this.results = results;
 	}
 

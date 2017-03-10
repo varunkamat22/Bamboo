@@ -4,6 +4,8 @@ import java.util.Locale;
 
 public interface MessageLocalizer {
 	
-	public String getMessage(String key, Locale locale);
+	public String getLocalizedMessage(Locale locale, String key);
+	
+	public String[] getLocalizedMessages(Locale locale, String...keys);
 	
 }
