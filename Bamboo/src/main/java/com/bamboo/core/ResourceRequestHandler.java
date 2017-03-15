@@ -23,6 +23,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.bamboo.core.util.FilterTranslatorUtil;
 import com.bamboo.core.util.ResourceRequestHandlerUtil;
+import com.bamboo.jdbc.PersistanceHelper;
 import com.bamboo.core.util.HttpErrorHelperUtil;
 
 @Component(value="ResourceRequestHandler")
@@ -38,6 +39,8 @@ public class ResourceRequestHandler {
 	@Autowired(required = false)
 	private MessageLocalizer messageLocalizer;
 	
+	@Autowired(required = true)
+	private PersistanceHelper persistanceHelper;
 
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
@@ -49,21 +52,25 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else
 			try{
-				return HttpErrorHelperUtil.getSuccessResponse(resourceManager.getFromId(id));
+				Object result = persistanceHelper.retrieveByID(id, resourceName, resourceManager.getResourceClass());
+				if(result == null)
+					return HttpErrorHelperUtil.getUnknownIDResponse(id);
+				else
+					return HttpErrorHelperUtil.getSuccessResponse(result);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 	}
 	
 
-	@SuppressWarnings("rawtypes")
+	@SuppressWarnings("unchecked")
 	private Response bulkSearch(String resourceName){
 		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			ListResponse listResponse = new ListResponse(resourceManager.get(null, null, 0, 0));
 			try{
+				ListResponse listResponse = new ListResponse(persistanceHelper.retrieveAll(resourceManager.getResourceName(), resourceManager.getResourceClass()));
 				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -91,7 +98,7 @@ public class ResourceRequestHandler {
 				try{
 					SearchCriteria searchCriteria = filter != null ? new FilterTranslatorUtil(resourceManager.getSupportedFilters()).translateSearchQuery(null, filter.split(ResourceConstants.FILTER_SEPERATOR)) : null;
 					SearchCriteria sortCriteria = sortBy != null ? FilterTranslatorUtil.translateSortQuery(sortBy) : null;
-					return HttpErrorHelperUtil.getSuccessResponse(resourceManager.get(searchCriteria, sortCriteria, batchSize, startIndex));
+					return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.retrieveAllWithFilter(resourceName, resourceManager.getResourceClass(), searchCriteria, sortCriteria, batchSize, startIndex));//resourceManager.get(searchCriteria, sortCriteria, batchSize, startIndex));
 				}catch(Exception e){
 					return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 				}
@@ -123,7 +130,7 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
 			try{
-				return HttpErrorHelperUtil.getCreationSuccessResponse((resourceManager.save(resourceManager.getResourceClass().cast(resource))));
+				return HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));//(resourceManager.save(resourceManager.getResourceClass().cast(resource))));
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
@@ -140,7 +147,7 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
-				resourceManager.delete(id);
+				persistanceHelper.delete(id, resourceName);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -167,14 +174,16 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
 			
 			try{
-				Object originalResource = resourceManager.getFromId(id);
+				Object originalResource = persistanceHelper.retrieveByID(id, resourceName, resourceManager.getResourceClass());
+				if(originalResource == null)
+					return HttpErrorHelperUtil.getUnknownIDResponse(id);
 				Object updatedResource = ResourceRequestHandlerUtil.updateResourceFromRequest(originalResource, resource);
 				
 				List<String> messages = ResourceRequestHandlerUtil.validateResource(updatedResource, applicationConfiguration.getValidator(), messageLocalizer, request.getLocale());
 				if(!messages.isEmpty()){
 					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
-				return HttpErrorHelperUtil.getSuccessResponse(resourceManager.update(updatedResource));
+				return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource));
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
