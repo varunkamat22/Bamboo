@@ -13,6 +13,8 @@ import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.bamboo.core.SearchCriteria;
 import com.bamboo.jdbc.util.MySQLQueryCreatorUtil;
 
@@ -40,6 +42,7 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 	}
 
 	@Override
+	@Transactional
 	public Object save(Object resource, String resourceName, Class resourceType) {
 		KeyHolder holder = new GeneratedKeyHolder();
 		NamedParameterJdbcTemplate namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
@@ -54,6 +57,7 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 	}
 
 	@Override
+	@Transactional
 	public void delete(String id, String resourceName) {
 		JdbcTemplate template = new JdbcTemplate(dataSource);
 		template.execute(MySQLQueryCreatorUtil.formDeleteQuery(id, resourceName));
@@ -67,6 +71,7 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 	}
 
 	@Override
+	@Transactional
 	public Object update(String id, String resourceName, Class resourceType, Object resource) {
 		NamedParameterJdbcTemplate namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
 		SqlParameterSource namedParameters = new BeanPropertySqlParameterSource(resource);
