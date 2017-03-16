@@ -28,6 +28,7 @@ dependencies {
     compile group: 'org.springframework', name: 'spring-context', version: '4.3.6.RELEASE'
     compile group: 'org.springframework', name: 'spring-expression', version: '4.3.6.RELEASE'
     compile group: 'org.springframework', name: 'spring-web', version: '4.3.6.RELEASE'
+    compile group: 'org.springframework', name: 'spring-jdbc', version: '4.3.6.RELEASE'
     
     //Jersey dependencies start here
     //compile group: 'org.glassfish.jersey.core', name: 'jersey-server', version: '2.5.2'
@@ -56,10 +57,9 @@ sourceSets {
     }
 }
 
-//Task to create a single jar with all dependencies - for testing only
-//create a single Jar with all dependencies
-task fatJar(type: Jar) {
-    baseName = project.name + '-all'
-    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
-    with jar
+task copyToLib(type: Copy) {
+    into "build/output/libs"
+    from configurations.runtime
 }
+
+build.dependsOn(copyToLib)

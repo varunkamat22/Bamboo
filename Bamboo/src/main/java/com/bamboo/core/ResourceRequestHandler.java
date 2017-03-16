@@ -2,6 +2,7 @@ package com.bamboo.core;
 
 import java.util.List;
 import javax.servlet.http.HttpServletRequest;
+import javax.validation.Validator;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -16,7 +17,6 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import com.bamboo.config.ApplicationConfiguration;
 import com.bamboo.core.util.ResourceConstants;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -33,15 +33,15 @@ public class ResourceRequestHandler {
 	@Autowired(required = true)
 	private ResourceRegistry resourceRegistry;
 	
-	@Autowired(required = true)
-	private ApplicationConfiguration applicationConfiguration;
-	
 	@Autowired(required = false)
 	private MessageLocalizer messageLocalizer;
 	
 	@Autowired(required = true)
 	private PersistanceHelper persistanceHelper;
-
+	
+	@Autowired(required = true)
+	private Validator validator;
+	
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -125,7 +125,7 @@ public class ResourceRequestHandler {
 			
 			if(resource == null)
 				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
-			List<String> messages = ResourceRequestHandlerUtil.validateResource(resource, applicationConfiguration.getValidator(), messageLocalizer, request.getLocale());
+			List<String> messages = ResourceRequestHandlerUtil.validateResource(resource, validator, messageLocalizer, request.getLocale());
 			if(!messages.isEmpty()){
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
@@ -179,7 +179,7 @@ public class ResourceRequestHandler {
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
 				Object updatedResource = ResourceRequestHandlerUtil.updateResourceFromRequest(originalResource, resource);
 				
-				List<String> messages = ResourceRequestHandlerUtil.validateResource(updatedResource, applicationConfiguration.getValidator(), messageLocalizer, request.getLocale());
+				List<String> messages = ResourceRequestHandlerUtil.validateResource(updatedResource, validator, messageLocalizer, request.getLocale());
 				if(!messages.isEmpty()){
 					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
