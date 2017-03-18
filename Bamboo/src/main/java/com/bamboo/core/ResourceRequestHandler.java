@@ -24,6 +24,7 @@ import com.google.gson.JsonParser;
 import com.bamboo.core.util.FilterTranslatorUtil;
 import com.bamboo.core.util.ResourceRequestHandlerUtil;
 import com.bamboo.jdbc.PersistanceHelper;
+import com.bamboo.rules.RuleExecutionEngine;
 import com.bamboo.core.util.HttpErrorHelperUtil;
 
 @Component(value="ResourceRequestHandler")
@@ -41,6 +42,9 @@ public class ResourceRequestHandler {
 	
 	@Autowired(required = true)
 	private Validator validator;
+	
+	@Autowired(required = true)
+	private RuleExecutionEngine ruleExecutionEngine;
 	
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
@@ -130,6 +134,9 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
 			try{
+				
+				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+"PreCreate");
+				
 				return HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));//(resourceManager.save(resourceManager.getResourceClass().cast(resource))));
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
