@@ -1,5 +1,6 @@
 package com.bamboo.core;
 
+import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Validator;
@@ -157,7 +158,7 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
-				ruleExecutionEngine.executeRules(resourceName, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
+				ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
 				persistanceHelper.delete(id, resourceName);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
@@ -194,17 +195,20 @@ public class ResourceRequestHandler {
 				if(!messages.isEmpty()){
 					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
-				return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource));
+				
+				List<String> updatedFields = new ArrayList<String>();
+				resource.entrySet().forEach(entry -> {
+					updatedFields.add(entry.getKey());
+				});
+				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_UPDATE);
+				updatedResource = persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource);
+				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_UPDATE);
+				
+				return HttpErrorHelperUtil.getSuccessResponse(updatedResource);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 		}
-	}
-	
-	@Path("hello")
-	@GET
-	public String test(){
-		return "Hello World";
 	}
 	
 }

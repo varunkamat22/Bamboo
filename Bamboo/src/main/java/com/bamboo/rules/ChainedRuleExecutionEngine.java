@@ -53,4 +53,16 @@ public class ChainedRuleExecutionEngine implements RuleExecutionEngine{
 	private RuleContext formRuleContext(Object resource,  String resourceName, String ruleName){
 		return new RuleContext(resource, resourceName, ruleName);
 	}
+
+	@Override
+	public void executeRules(Object resource, Object originalResource, List<String> changedFields, String resourceName, String ruleName) {
+		RuleContext ruleContext = formRuleContext(resource, resourceName, ruleName);
+		ruleContext.setOriginalResource(originalResource);
+		ruleContext.setChangedFields(changedFields);
+		RuleAction ruleAction = new RuleAction();
+		RuleWrapper ruleWrapper = ruleMap.get(resourceName);
+		if(ruleWrapper != null){
+			ruleWrapper.beginRuleExecution(ruleContext, ruleAction);
+		}
+	}
 }
