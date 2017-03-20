@@ -7,4 +7,7 @@ public interface Rule {
 	public void runRule(RuleContext ruleContext, RuleAction ruleAction);
 	
 	public String getRuleName();
+	
+	public String getResourceName();
+	
 }

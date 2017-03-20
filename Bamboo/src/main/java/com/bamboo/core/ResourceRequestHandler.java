@@ -25,6 +25,7 @@ import com.bamboo.core.util.FilterTranslatorUtil;
 import com.bamboo.core.util.ResourceRequestHandlerUtil;
 import com.bamboo.jdbc.PersistanceHelper;
 import com.bamboo.rules.RuleExecutionEngine;
+import com.bamboo.rules.util.RuleConstants;
 import com.bamboo.core.util.HttpErrorHelperUtil;
 
 @Component(value="ResourceRequestHandler")
@@ -60,6 +61,7 @@ public class ResourceRequestHandler {
 				if(result == null)
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
 				else
+					ruleExecutionEngine.executeRules(result, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
 					return HttpErrorHelperUtil.getSuccessResponse(result);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -75,6 +77,7 @@ public class ResourceRequestHandler {
 		else{
 			try{
 				ListResponse listResponse = new ListResponse(persistanceHelper.retrieveAll(resourceManager.getResourceName(), resourceManager.getResourceClass()));
+				ruleExecutionEngine.executeRules(listResponse, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
 				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -134,10 +137,10 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
 			try{
-				
-				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+"PreCreate");
-				
-				return HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));//(resourceManager.save(resourceManager.getResourceClass().cast(resource))));
+				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_CREATE);
+				Response createResponse =  HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));
+				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_CREATE);
+				return createResponse;
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
@@ -154,6 +157,7 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
+				ruleExecutionEngine.executeRules(resourceName, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
 				persistanceHelper.delete(id, resourceName);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
