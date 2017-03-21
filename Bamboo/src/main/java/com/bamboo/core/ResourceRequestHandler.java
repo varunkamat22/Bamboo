@@ -1,5 +1,6 @@
 package com.bamboo.core;
 
+import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Validator;
@@ -24,6 +25,8 @@ import com.google.gson.JsonParser;
 import com.bamboo.core.util.FilterTranslatorUtil;
 import com.bamboo.core.util.ResourceRequestHandlerUtil;
 import com.bamboo.jdbc.PersistanceHelper;
+import com.bamboo.rules.RuleExecutionEngine;
+import com.bamboo.rules.util.RuleConstants;
 import com.bamboo.core.util.HttpErrorHelperUtil;
 
 @Component(value="ResourceRequestHandler")
@@ -42,6 +45,9 @@ public class ResourceRequestHandler {
 	@Autowired(required = true)
 	private Validator validator;
 	
+	@Autowired(required = true)
+	private RuleExecutionEngine ruleExecutionEngine;
+	
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -56,6 +62,7 @@ public class ResourceRequestHandler {
 				if(result == null)
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
 				else
+					ruleExecutionEngine.executeRules(result, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
 					return HttpErrorHelperUtil.getSuccessResponse(result);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -71,6 +78,7 @@ public class ResourceRequestHandler {
 		else{
 			try{
 				ListResponse listResponse = new ListResponse(persistanceHelper.retrieveAll(resourceManager.getResourceName(), resourceManager.getResourceClass()));
+				ruleExecutionEngine.executeRules(listResponse, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
 				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -130,7 +138,10 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
 			try{
-				return HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));//(resourceManager.save(resourceManager.getResourceClass().cast(resource))));
+				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_CREATE);
+				Response createResponse =  HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));
+				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_CREATE);
+				return createResponse;
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
@@ -147,6 +158,7 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
+				ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
 				persistanceHelper.delete(id, resourceName);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
@@ -183,17 +195,20 @@ public class ResourceRequestHandler {
 				if(!messages.isEmpty()){
 					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
-				return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource));
+				
+				List<String> updatedFields = new ArrayList<String>();
+				resource.entrySet().forEach(entry -> {
+					updatedFields.add(entry.getKey());
+				});
+				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_UPDATE);
+				updatedResource = persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource);
+				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_UPDATE);
+				
+				return HttpErrorHelperUtil.getSuccessResponse(updatedResource);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 		}
-	}
-	
-	@Path("hello")
-	@GET
-	public String test(){
-		return "Hello World";
 	}
 	
 }
