@@ -14,6 +14,7 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
+import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import com.bamboo.core.util.ResourceConstants;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.bamboo.auth.AuthenticationHandler;
 import com.bamboo.core.util.FilterTranslatorUtil;
 import com.bamboo.core.util.ResourceRequestHandlerUtil;
 import com.bamboo.jdbc.PersistanceHelper;
@@ -48,16 +50,21 @@ public class ResourceRequestHandler {
 	@Autowired(required = true)
 	private RuleExecutionEngine ruleExecutionEngine;
 	
+	@Autowired(required = true)
+	private AuthenticationHandler authenticationHandler; 
+	
 	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@GET
-	public Response getFromID(@PathParam("resourceName") String resourceName, @PathParam("id") String id, @Context HttpServletRequest request){
+	public Response getFromID(@PathParam("resourceName") String resourceName, @PathParam("id") String id, @Context HttpServletRequest request, @Context HttpHeaders headers){
 		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else
 			try{
+				if(!authorize(headers))
+					return HttpErrorHelperUtil.getUnauthorizedResponse();
 				Object result = persistanceHelper.retrieveByID(id, resourceName, resourceManager.getResourceClass());
 				if(result == null)
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
@@ -71,12 +78,14 @@ public class ResourceRequestHandler {
 	
 
 	@SuppressWarnings("unchecked")
-	private Response bulkSearch(String resourceName){
+	private Response bulkSearch(String resourceName, @Context HttpHeaders headers){
 		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		if(resourceManager == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
+				if(!authorize(headers))
+					return HttpErrorHelperUtil.getUnauthorizedResponse();
 				ListResponse listResponse = new ListResponse(persistanceHelper.retrieveAll(resourceManager.getResourceName(), resourceManager.getResourceClass()));
 				ruleExecutionEngine.executeRules(listResponse, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
 				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
@@ -91,9 +100,9 @@ public class ResourceRequestHandler {
 	@Path("{resourceName}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@GET
-	public Response search(@PathParam("resourceName") String resourceName, @QueryParam("filter") String filter, @QueryParam("sortBy") String sortBy, @QueryParam("batchSize") int batchSize, @QueryParam("startIndex") int startIndex, @Context HttpServletRequest request){
+	public Response search(@PathParam("resourceName") String resourceName, @QueryParam("filter") String filter, @QueryParam("sortBy") String sortBy, @QueryParam("batchSize") int batchSize, @QueryParam("startIndex") int startIndex, @Context HttpServletRequest request, @Context HttpHeaders headers){
 		if(filter == null && sortBy == null && batchSize == 0 && startIndex == 0){
-			return bulkSearch(resourceName);
+			return bulkSearch(resourceName, headers);
 		}
 		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
 		
@@ -209,6 +218,19 @@ public class ResourceRequestHandler {
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 		}
+	}
+	
+	private boolean authorize( HttpHeaders headers){
+		if(headers == null || headers.getHeaderString("Authorization") == null)
+			return false;
+		boolean isValid = false;
+		try{
+			String authToken = headers.getHeaderString("Authorization");
+			isValid =  authenticationHandler.validateAuthenticationToken(authToken);
+		}catch(Exception ex){
+			ex.printStackTrace();
+		}
+		return isValid;
 	}
 	
 }

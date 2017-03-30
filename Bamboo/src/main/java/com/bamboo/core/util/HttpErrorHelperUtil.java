@@ -65,4 +65,12 @@ public class HttpErrorHelperUtil {
 				.header("Content-Type", MediaType.APPLICATION_JSON)
 				.build();
 	}
+	
+	public static Response getUnauthorizedResponse(){
+		return Response.status(HttpStatus.UNAUTHORIZED.value())
+				.entity(new Gson().toJson(new HttpError("Authorization failed for your request")))
+				.header("Content-Type", MediaType.APPLICATION_JSON)
+				.build();
+	}
+	
 }
