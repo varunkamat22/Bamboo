@@ -18,8 +18,8 @@ public class ChainedRuleExecutionEngine implements RuleExecutionEngine{
 	@Autowired(required=false)
 	private List<Rule> rules;
 	
-	@PostConstruct
-	private void constructRuleMap(){
+	@PostConstruct 
+	public void constructRuleMap(){
 		if(rules.isEmpty())
 			return;
 		System.out.println("Total rules found - "+rules.size());
