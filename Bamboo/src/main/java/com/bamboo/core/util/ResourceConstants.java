@@ -8,6 +8,8 @@ public class ResourceConstants {
 	public static final String BLANK_POST_REQUEST = "The request body is empty";
 	public static final String INCORRECT_REQUEST_BODY = "The request body is incorrectly formed";
 	public static final String POST_ROOT_TAG = "resource";
+	public static final String OPERATIONS_TAG = "operations";
+	public static final String POST_LINKED_RESOURCE_TAG = "linkedResource";
 	public static final String UNKNOWN_ID = "ID doesn't exist - %s";
 	public static final String ERROR_ROOT_TAG = "errors";
 	public static final String INVALID_SEARCH_FILTER = "Incorrect filter condition";
