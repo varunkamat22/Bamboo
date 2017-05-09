@@ -85,8 +85,9 @@ public class MySQLQueryCreatorUtil {
 		return "INSERT INTO %s (%s,%s) VALUES(%s,%s)";
 	}
 	
-	public static String formDeleteQuery(String id, String resourceName){
-		return String.format("DELETE FROM %s where id = %s", resourceName.toUpperCase(), id);
+	
+	public static String formDeleteQuery(){
+		return "DELETE FROM %s where %s=%s";
 	}
 	
 	public static String formUpdateQueryForRemoveArrayValue(){
@@ -154,6 +155,9 @@ public class MySQLQueryCreatorUtil {
 		return  queryBuilder.toString().replaceFirst(", WHERE", " WHERE");		
 	}
 	
+	public static String formClearArrayQuery(){
+		return "DELETE from %s where %s=%s";
+	}
 	
 	
 	private static String getMethodName(String key) {

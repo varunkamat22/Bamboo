@@ -277,9 +277,31 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 
 	@Override
 	@Transactional
-	public void delete(String id, String resourceName) {
+	public void delete(String id, Resource resource) {
 		JdbcTemplate template = new JdbcTemplate(dataSource);
-		template.execute(MySQLQueryCreatorUtil.formDeleteQuery(id, resourceName));
+		
+		Field[] fields = resource.getResourceClass().getDeclaredFields();
+		//Delete all the array entries of simple types
+		for(Field field : fields){
+			if(field.getType().isArray() && !Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class)){
+				String arrayDelQuery = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
+						                     resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_DATA", 
+						                     resource.getResourceName().toLowerCase(), id);
+				template.execute(arrayDelQuery);
+			}else if(field.getType().isArray()){
+				String arrayDelQuery = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
+	                     resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_INFO", 
+	                     resource.getResourceName().toLowerCase(), id);
+				template.execute(arrayDelQuery);
+			}
+		}
+		
+		//Now delete the actual resource
+		String query = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
+                resource.getResourceName().toUpperCase(), 
+                "id", id);
+		template.execute(query);
+		
 	}
 
 	@Override
@@ -346,8 +368,32 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 		namedParameterJdbcTemplate.update(MySQLQueryCreatorUtil.formUpdateQuery(resource), namedParameters);
 		
 		try{
-		
 			JdbcTemplate jdbcInsertTemplate = new JdbcTemplate(dataSource);
+			//First clear out all array entries that are set to null
+			List<Field> allFields = Arrays.asList(resource.getResourceClass().getDeclaredFields());
+			for(Field f : allFields){
+				if(!f.getType().isArray())
+					continue;
+				f.setAccessible(true);
+				if(!(MethodUtils.invokeExactMethod(resource, getMethodName(f.getName()), new Object[]{}) == null))
+					continue;
+				
+				//delete all the array values
+				if(Arrays.asList(f.getType().getComponentType().getInterfaces()).contains(Resource.class)){
+					String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
+		                                        resource.getResourceName().toUpperCase()+"_"+f.getName().toUpperCase()+"_INFO",
+		                                        resource.getResourceName().toLowerCase(), resource.getId());
+					jdbcInsertTemplate.execute(query);
+				}else{
+					String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
+												resource.getResourceName().toUpperCase()+"_"+f.getName().toUpperCase()+"_DATA",
+					                            resource.getResourceName().toLowerCase(), resource.getId()
+		                                        );
+					jdbcInsertTemplate.execute(query);
+				}
+			}
+			
+			
 			for(Entry<String, Map<String, List<Object>>> entry : operationsMap.entrySet()){
 					
 				Field field = resource.getResourceClass().getDeclaredField(entry.getKey());

@@ -15,7 +15,7 @@ public interface PersistanceHelper {
 	
 	public Resource save(Resource resource);
 	
-	public void delete(String id,  String resourceName);
+	public void delete(String id,  Resource resource);
 	
 	public List<Resource> retrieveAllWithFilter(Resource resource, SearchCriteria searchCriteria, SearchCriteria sortCriteria, int batchSize, int startIndex);
 	

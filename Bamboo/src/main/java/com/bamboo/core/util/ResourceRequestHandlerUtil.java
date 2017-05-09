@@ -46,35 +46,36 @@ public class ResourceRequestHandlerUtil {
 		JsonArray operations = putObject.getAsJsonArray(ResourceConstants.OPERATIONS_TAG); 
 		Map<String, Map<String, List<Object>>> operationsMap = new HashMap<>();
 		
-		operations.forEach(operation -> {
-			String property = operation.getAsJsonObject().get("property").getAsString();
-			
-			String op = operation.getAsJsonObject().get("op").getAsString();
-			if(!(op.equals("add") || op.equals("remove"))){
-				throw new RuntimeException("Invalid operation type");
-			}
-			Object value = operation.getAsJsonObject().get("value");
-			
-			if(operationsMap.get(property) == null){
-				List<Object> valueList = new ArrayList<>();
-				valueList.add(value);
-				Map<String, List<Object>> valueOpMap = new HashMap<>();
-				valueOpMap.put(op, valueList);
-				operationsMap.put(property,valueOpMap);
-			}else{
-				Map<String, List<Object>> valueOpMap = operationsMap.get(property);
-				if(valueOpMap.get(op) != null){
-					List<Object> valueList = valueOpMap.get(op);
-					valueList.add(value);
-				}else{
+		if(operations != null && operations.size() > 0){
+			operations.forEach(operation -> {
+				String property = operation.getAsJsonObject().get("property").getAsString();
+				
+				String op = operation.getAsJsonObject().get("op").getAsString();
+				if(!(op.equals("add") || op.equals("remove"))){
+					throw new RuntimeException("Invalid operation type");
+				}
+				Object value = operation.getAsJsonObject().get("value");
+				
+				if(operationsMap.get(property) == null){
 					List<Object> valueList = new ArrayList<>();
 					valueList.add(value);
+					Map<String, List<Object>> valueOpMap = new HashMap<>();
 					valueOpMap.put(op, valueList);
+					operationsMap.put(property,valueOpMap);
+				}else{
+					Map<String, List<Object>> valueOpMap = operationsMap.get(property);
+					if(valueOpMap.get(op) != null){
+						List<Object> valueList = valueOpMap.get(op);
+						valueList.add(value);
+					}else{
+						List<Object> valueList = new ArrayList<>();
+						valueList.add(value);
+						valueOpMap.put(op, valueList);
+					}
 				}
-			}
-		
-		});
-		
+			
+			});
+		}
 		
 		DateFormat formatter = new SimpleDateFormat(ResourceConstants.DATE_FORMAT);
 	

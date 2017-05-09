@@ -165,7 +165,7 @@ public class ResourceRequestHandler {
 		}
 	}
 	
-	/*
+	
 	@Path("{resourceName}/{id}")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
@@ -176,15 +176,15 @@ public class ResourceRequestHandler {
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
-				ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
-				persistanceHelper.delete(id, resourceName);
+				//ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
+				persistanceHelper.delete(id, resource);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 		}
 	}
-	*/
+	
 	
 	@SuppressWarnings("unchecked")
 	@Path("{resourceName}/{id}")
