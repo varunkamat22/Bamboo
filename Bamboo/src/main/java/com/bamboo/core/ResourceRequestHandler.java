@@ -1,7 +1,12 @@
 package com.bamboo.core;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
@@ -21,6 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.bamboo.core.util.ResourceConstants;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.bamboo.auth.AuthenticationHandler;
@@ -53,41 +60,42 @@ public class ResourceRequestHandler {
 	@Autowired(required = true)
 	private AuthenticationHandler authenticationHandler; 
 	
-	@SuppressWarnings("rawtypes")
+	
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@GET
 	public Response getFromID(@PathParam("resourceName") String resourceName, @PathParam("id") String id, @Context HttpServletRequest request, @Context HttpHeaders headers){
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
-		if(resourceManager == null)
+		Resource resource = resourceRegistry.getResource(resourceName);
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else
 			try{
-				if(!authorize(headers))
-					return HttpErrorHelperUtil.getUnauthorizedResponse();
-				Object result = persistanceHelper.retrieveByID(id, resourceName, resourceManager.getResourceClass());
+				/*if(!authorize(headers))
+				return HttpErrorHelperUtil.getUnauthorizedResponse();*/
+				
+				Resource result = persistanceHelper.retrieveByID(id, resource);
+				
 				if(result == null)
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
-				else
-					ruleExecutionEngine.executeRules(result, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
-					return HttpErrorHelperUtil.getSuccessResponse(result);
+				
+				ruleExecutionEngine.executeRules(result, resource.getResourceName(), resource.getResourceName()+RuleConstants.RULE_POST_GET);
+				return HttpErrorHelperUtil.getSuccessResponse(result);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 	}
 	
-
-	@SuppressWarnings("unchecked")
+	
 	private Response bulkSearch(String resourceName, @Context HttpHeaders headers){
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
-		if(resourceManager == null)
+		Resource resource = resourceRegistry.getResource(resourceName);
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
-				if(!authorize(headers))
-					return HttpErrorHelperUtil.getUnauthorizedResponse();
-				ListResponse listResponse = new ListResponse(persistanceHelper.retrieveAll(resourceManager.getResourceName(), resourceManager.getResourceClass()));
-				ruleExecutionEngine.executeRules(listResponse, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_GET);
+				/*if(!authorize(headers))
+					return HttpErrorHelperUtil.getUnauthorizedResponse();*/
+				ListResponse<Resource> listResponse = new ListResponse<>(persistanceHelper.retrieveAll(resource));
+				ruleExecutionEngine.executeRules(listResponse, resource.getResourceName(), resource.getResourceName()+RuleConstants.RULE_POST_GET);
 				return HttpErrorHelperUtil.getSuccessResponse(listResponse);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -95,8 +103,7 @@ public class ResourceRequestHandler {
 		}
 	}
 	
-
-	@SuppressWarnings("rawtypes")
+	
 	@Path("{resourceName}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@GET
@@ -104,18 +111,18 @@ public class ResourceRequestHandler {
 		if(filter == null && sortBy == null && batchSize == 0 && startIndex == 0){
 			return bulkSearch(resourceName, headers);
 		}
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
+		Resource resource = resourceRegistry.getResource(resourceName);
 		
-		if(resourceManager == null)
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			if(resourceManager.getSupportedFilters() == null){
+			if(resource.getSupportedFilters() == null){
 				return HttpErrorHelperUtil.getBadRequestResponse(String.format(ResourceConstants.FILTERS_NOT_SUPPORTED, resourceName));
 			}else{
 				try{
-					SearchCriteria searchCriteria = filter != null ? new FilterTranslatorUtil(resourceManager.getSupportedFilters()).translateSearchQuery(null, filter.split(ResourceConstants.FILTER_SEPERATOR)) : null;
+					SearchCriteria searchCriteria = filter != null ? new FilterTranslatorUtil(resource.getSupportedFilters()).translateSearchQuery(null, filter.split(ResourceConstants.FILTER_SEPERATOR)) : null;
 					SearchCriteria sortCriteria = sortBy != null ? FilterTranslatorUtil.translateSortQuery(sortBy) : null;
-					return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.retrieveAllWithFilter(resourceName, resourceManager.getResourceClass(), searchCriteria, sortCriteria, batchSize, startIndex));//resourceManager.get(searchCriteria, sortCriteria, batchSize, startIndex));
+					return HttpErrorHelperUtil.getSuccessResponse(persistanceHelper.retrieveAllWithFilter(resource, searchCriteria, sortCriteria, batchSize, startIndex));
 				}catch(Exception e){
 					return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 				}
@@ -123,33 +130,34 @@ public class ResourceRequestHandler {
 		}
 	}
 	
-	@SuppressWarnings("rawtypes")
 	@Path("{resourceName}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	@POST
 	public Response save(@PathParam("resourceName") String resourceName, String postResource, @Context HttpServletRequest request){
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
+		Resource resource = resourceRegistry.getResource(resourceName);
 		
-		if(resourceManager == null)
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			if(postResource == null || postResource.isEmpty())
 				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.BLANK_POST_REQUEST);
 			
 			JsonObject postObject = new JsonParser().parse(postResource).getAsJsonObject();
-			Object resource = new Gson().fromJson(postObject.get(ResourceConstants.POST_ROOT_TAG), resourceManager.getResourceClass());
+			Object parsedRootResource = new Gson().fromJson(postObject.get(ResourceConstants.POST_ROOT_TAG), resource.getResourceClass());
 			
-			if(resource == null)
+			if(parsedRootResource == null)
 				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
-			List<String> messages = ResourceRequestHandlerUtil.validateResource(resource, validator, messageLocalizer, request.getLocale());
+			List<String> messages = new ArrayList<>();
+			messages = ResourceRequestHandlerUtil.validateResource((Resource)parsedRootResource, validator, true, messages, messageLocalizer, request.getLocale());
+			
 			if(!messages.isEmpty()){
 				return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 			}
 			try{
-				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_CREATE);
-				Response createResponse =  HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save(resource, resourceName, resourceManager.getResourceClass()));
-				ruleExecutionEngine.executeRules(resource, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_CREATE);
+				ruleExecutionEngine.executeRules(parsedRootResource, resource.getResourceName(), resource.getResourceName()+RuleConstants.RULE_PRE_CREATE);
+				Response createResponse =  HttpErrorHelperUtil.getCreationSuccessResponse(persistanceHelper.save((Resource)parsedRootResource));
+				ruleExecutionEngine.executeRules(parsedRootResource, resource.getResourceName(), resource.getResourceName()+RuleConstants.RULE_POST_CREATE);
 				return createResponse;
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -157,18 +165,19 @@ public class ResourceRequestHandler {
 		}
 	}
 	
+	
 	@Path("{resourceName}/{id}")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	@DELETE
 	public Response delete(@PathParam("resourceName") String resourceName, @PathParam("id") String id){
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
-		if(resourceManager == null)
+		Resource resource = resourceRegistry.getResource(resourceName);
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
 			try{
-				ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
-				persistanceHelper.delete(id, resourceName);
+				//ruleExecutionEngine.executeRules(id, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_DELETE);
+				persistanceHelper.delete(id, resource);
 				return HttpErrorHelperUtil.getNoContentResponse();
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
@@ -176,49 +185,50 @@ public class ResourceRequestHandler {
 		}
 	}
 	
+	
 	@SuppressWarnings("unchecked")
 	@Path("{resourceName}/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
 	@PUT
-	public Response update(@PathParam("resourceName") String resourceName, String postResource, @Context HttpServletRequest request, @PathParam("id") String id){
-		ResourceManager resourceManager = resourceRegistry.getResourceManager(resourceName);
-		if(resourceManager == null)
+	public Response update(@PathParam("resourceName") String resourceName, String jsonResource, @Context HttpServletRequest request, @PathParam("id") String id){
+		Resource resource = resourceRegistry.getResource(resourceName);
+		
+		if(resource == null)
 			return HttpErrorHelperUtil.getResourceNotFoundResponse(resourceName);
 		else{
-			if(postResource == null || postResource.isEmpty())
+			if(jsonResource == null || jsonResource.isEmpty())
 				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.BLANK_POST_REQUEST);
 			
-			JsonObject postObject = new JsonParser().parse(postResource).getAsJsonObject();
-			JsonObject resource = (JsonObject) postObject.get(ResourceConstants.POST_ROOT_TAG);
+			/*JsonObject postObject = new JsonParser().parse(jsonResource).getAsJsonObject();
+			postObject = (JsonObject) postObject.get(ResourceConstants.POST_ROOT_TAG);
+			
 			if(resource == null)
-				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);
+				return HttpErrorHelperUtil.getBadRequestResponse(ResourceConstants.INCORRECT_REQUEST_BODY);*/
 			
 			try{
-				Object originalResource = persistanceHelper.retrieveByID(id, resourceName, resourceManager.getResourceClass());
+				Resource originalResource = persistanceHelper.retrieveByID(id, resource);
 				if(originalResource == null)
 					return HttpErrorHelperUtil.getUnknownIDResponse(id);
-				Object updatedResource = ResourceRequestHandlerUtil.updateResourceFromRequest(originalResource, resource);
+				Map<String, Map<String, List<Object>>> operationsMap = ResourceRequestHandlerUtil.updateResourceFromRequest(originalResource, jsonResource);
 				
-				List<String> messages = ResourceRequestHandlerUtil.validateResource(updatedResource, validator, messageLocalizer, request.getLocale());
+				List<String> messages = new ArrayList<String>();
+				messages = ResourceRequestHandlerUtil.validateResource(originalResource, validator, false, messages, messageLocalizer, request.getLocale());
 				if(!messages.isEmpty()){
 					return HttpErrorHelperUtil.getBadRequestResponse(messages.toArray(new String[messages.size()]));
 				}
 				
-				List<String> updatedFields = new ArrayList<String>();
-				resource.entrySet().forEach(entry -> {
-					updatedFields.add(entry.getKey());
-				});
-				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_UPDATE);
-				updatedResource = persistanceHelper.update(id, resourceName, resourceManager.getResourceClass(), updatedResource);
-				ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_UPDATE);
+				//ruleExecutionEngine.executeRules(updatedResource, originalResource, null, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_PRE_UPDATE);
+				originalResource = persistanceHelper.update(id, originalResource, operationsMap);
+				//ruleExecutionEngine.executeRules(updatedResource, originalResource, updatedFields, resourceManager.getResourceName(), resourceManager.getResourceName()+RuleConstants.RULE_POST_UPDATE);
 				
-				return HttpErrorHelperUtil.getSuccessResponse(updatedResource);
+				return HttpErrorHelperUtil.getSuccessResponse(originalResource);
 			}catch(Exception e){
 				return HttpErrorHelperUtil.getServerErrorResponse(e.getMessage());
 			}
 		}
 	}
+	
 	
 	private boolean authorize( HttpHeaders headers){
 		if(headers == null || headers.getHeaderString("Authorization") == null)
@@ -231,6 +241,10 @@ public class ResourceRequestHandler {
 			ex.printStackTrace();
 		}
 		return isValid;
+	}
+	
+	private String getLinkedResourceName(JsonElement jsonElement){
+		return jsonElement.getAsJsonObject().entrySet().stream().findFirst().get().getKey();
 	}
 	
 }

@@ -1,21 +1,24 @@
 package com.bamboo.jdbc;
 
 import java.util.List;
+import java.util.Map;
 
+import com.bamboo.core.Resource;
 import com.bamboo.core.SearchCriteria;
+import com.google.gson.JsonElement;
 
 public interface PersistanceHelper {
 	
-	public List<Object> retrieveAll(String resourceName, Class resourceType);
+	public List<Resource> retrieveAll(Resource resource);
 	
-	public Object retrieveByID(String id, String resourceName, Class resourceType);
+	public Resource retrieveByID(String id, Resource resource);
 	
-	public Object save(Object resource, String resourceName, Class resourceType);
+	public Resource save(Resource resource);
 	
-	public void delete(String id,  String resourceName);
+	public void delete(String id,  Resource resource);
 	
-	public List<Object> retrieveAllWithFilter(String resourceName, Class resourceType, SearchCriteria searchCriteria, SearchCriteria sortCriteria, int batchSize, int startIndex);
+	public List<Resource> retrieveAllWithFilter(Resource resource, SearchCriteria searchCriteria, SearchCriteria sortCriteria, int batchSize, int startIndex);
 	
-	public Object update(String id, String resourceName, Class resourceType, Object resource);
+	public Resource update(String id, Resource resource, Map<String, Map<String, List<Object>>> operationsMap);
 	
 }

@@ -10,30 +10,29 @@ import org.springframework.stereotype.Component;
 
 @Component("resourceRegistry")
 @Scope("singleton")
-@SuppressWarnings("rawtypes")
 public final class ResourceRegistry {
 
-	private Map<String, ResourceManager> routeRegistry;
+	private Map<String, Resource> routeRegistry;
 	
-	@Autowired(required=false) 
-	private List<ResourceManager> resourceManagers;
+	@Autowired(required=false)
+	private List<Resource> resources;
 	
 	@PostConstruct
 	private void buildRegistry(){
-		System.out.println("Total number of resources found>>"+resourceManagers.size());
+		System.out.println("Total number of resources found>>"+resources.size());
 		
-		if(resourceManagers != null && !resourceManagers.isEmpty()){
+		if(resources != null && !resources.isEmpty()){
 			routeRegistry = new HashMap<>();
-			resourceManagers.forEach(rm -> {
-				if(routeRegistry.get(rm.getResourceName()) != null)
-						throw new RuntimeException("Duplicate resource found - "+rm.getResourceName());
-				routeRegistry.put(rm.getResourceName(), rm);
+			resources.forEach(res -> {
+				if(routeRegistry.get(res.getResourceName()) != null)
+						throw new RuntimeException("Duplicate resource found - "+res.getResourceName());
+				routeRegistry.put(res.getResourceName(), res);
 			});
 		}
-		resourceManagers = null; //release for GC
+		resources= null; //release for GC
 	}
 	
-	public ResourceManager getResourceManager(String resourceName){
+	public Resource getResource(String resourceName){
 		return routeRegistry.get(resourceName);
 	}
 }
