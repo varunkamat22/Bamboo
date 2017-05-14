@@ -1,8 +1,6 @@
 package com.bamboo.jdbc.util;
 
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 
 import org.apache.commons.lang3.reflect.MethodUtils;

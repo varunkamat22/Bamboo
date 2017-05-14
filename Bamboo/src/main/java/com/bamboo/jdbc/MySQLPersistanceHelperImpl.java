@@ -1,13 +1,7 @@
 package com.bamboo.jdbc;
 
-import java.lang.reflect.Array;
-
 import java.lang.reflect.Field;
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,19 +9,13 @@ import java.util.Map.Entry;
 
 import javax.sql.DataSource;
 
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.commons.lang3.reflect.MethodUtils;
-import org.glassfish.hk2.runlevel.RunLevelException;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.namedparam.BeanPropertySqlParameterSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
-import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
@@ -35,8 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.bamboo.core.Resource;
 import com.bamboo.core.SearchCriteria;
+import com.bamboo.core.types.ResourceWrapper;
+import com.bamboo.core.util.ResourceConstants;
 import com.bamboo.jdbc.util.MySQLQueryCreatorUtil;
-import com.google.gson.JsonElement;
 
 @Repository("mySQLPersistanceHelperImpl")
 public class MySQLPersistanceHelperImpl implements PersistanceHelper {
@@ -49,123 +38,88 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 
 	@Override
 	public List<Resource> retrieveAll(Resource resource) {
-		List<Resource> results;
 
 		try {
 			JdbcTemplate template = new JdbcTemplate(dataSource);
-			results = template.query(MySQLQueryCreatorUtil.formRetrieveAllQuery(resource), new BeanPropertyRowMapper(resource.getClass()));
+			List<Resource> results = template.query(MySQLQueryCreatorUtil.formRetrieveAllQuery(resource), new BeanPropertyRowMapper(resource.getClass()));
 
 			for (Resource result : results) {
-				
-				for (Field field : resource.getResourceClass().getDeclaredFields()) {
-
-					if (field.getType().isArray() && (field.getType().getComponentType().getInterfaces() == null
-							|| !Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-						// This is an array of simple type - fetch and add to resource
-						List arrayValues = template.queryForList(
-								MySQLQueryCreatorUtil.formRetrieveSimpleArrayQuery(result, field),
-								field.getType().getComponentType());
-						field.setAccessible(true);
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-								(Object) arrayValues.toArray((Object[]) Array.newInstance(field.getType().getComponentType(), arrayValues.size())));
-					} else if (field.getType().isArray() && (field.getType().getComponentType().getInterfaces() != null
-							&& Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-						// This is an array of nested type - fetch and add nested type
-						List<Integer> arrayValues = template.queryForList(
-								MySQLQueryCreatorUtil.formRetrieveNestedArrayQuery(result, field), int.class);
-						List<Object> nestedObjects = new ArrayList<>();
-
-						for (int nestedId : arrayValues) {
-							Object ob = field.getType().getComponentType().newInstance();
-							MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(nestedId));
-							nestedObjects.add(ob);
-						}
-
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-								(Object) nestedObjects.toArray((Object[]) Array
-										.newInstance(field.getType().getComponentType(), nestedObjects.size())));
-					} else if (!field.getType().isArray() && (field.getType().getInterfaces() != null
-							&& Arrays.asList(field.getType().getInterfaces()).contains(Resource.class))) {
-						// This is a single valued nested resource
-						int objectId = template.queryForObject(
-								MySQLQueryCreatorUtil.formRetrieveNestedObject(result, field), int.class);
-						Object ob = field.getType().newInstance();
-						MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(objectId));
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()), ob);
-					}
-				}
+				populateResourceObject(result, template);
 			}
+			return results;
 		} catch (Exception e) {
 			e.printStackTrace();
 			throw new RuntimeException(e.getMessage());
 		}
-		return results;
+		
 	}
 
 	@Override
 	public Resource retrieveByID(String id, Resource resource) {
-		Resource result = null;
 		try {
 			JdbcTemplate template = new JdbcTemplate(dataSource);
-			List<Object> results = template.query(MySQLQueryCreatorUtil.formRetrieveByIDQuery(id, resource),
-					new BeanPropertyRowMapper(resource.getResourceClass()));
-			result = results.isEmpty() ? null : (Resource) results.get(0);
+			List<Resource> results = template.query(MySQLQueryCreatorUtil.formRetrieveByIDQuery(id, resource),new BeanPropertyRowMapper(resource.getResourceClass()));
 			
-			if(result == null)
+			if(results.isEmpty())
 				return null;
+			else
+				return populateResourceObject(results.get(0), template);
 			
-			for (Field field : resource.getResourceClass().getDeclaredFields()) {
-
-				if (field.getType().isArray() && (field.getType().getComponentType().getInterfaces() == null || !Arrays
-						.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-					// This is an array of simple type - fetch and add to
-					// resource
-					List arrayValues = template.queryForList(
-							MySQLQueryCreatorUtil.formRetrieveSimpleArrayQuery(result, field),
-							field.getType().getComponentType());
-					field.setAccessible(true);
-					MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-							(Object) arrayValues.toArray((Object[]) Array.newInstance(field.getType().getComponentType(), arrayValues.size())));
-				} else if (field.getType().isArray()
-						&& (field.getType().getComponentType().getInterfaces() != null && Arrays
-								.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-					// This is an array of nested type - fetch and add nested
-					// type
-					List<Integer> arrayValues = template
-							.queryForList(MySQLQueryCreatorUtil.formRetrieveNestedArrayQuery(result, field), int.class);
-					List<Object> nestedObjects = new ArrayList<>();
-
-					for (int nestedId : arrayValues) {
-						Object ob = field.getType().getComponentType().newInstance();
-						MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(nestedId));
-						nestedObjects.add(ob);
-					}
-
-					MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-							(Object) nestedObjects.toArray((Object[]) Array
-									.newInstance(field.getType().getComponentType(), nestedObjects.size())));
-				} else if (!field.getType().isArray() && (field.getType().getInterfaces() != null
-						&& Arrays.asList(field.getType().getInterfaces()).contains(Resource.class))) {
-					// This is a single valued nested resource
-					Object ret = template.queryForObject(MySQLQueryCreatorUtil.formRetrieveNestedObject(result, field), Object.class);
-					
-					if(ret != null){
-						int objectId = Integer.parseInt(ret.toString());
-						Object ob = field.getType().newInstance();
-						MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(objectId));
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()), ob);
-					}else{
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()), new Object[]{null}, new Class[] {field.getType()});
-					}
-					
-				}
-
-			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			throw new RuntimeException(e.getMessage());
 		}
-		return result;
+	}
+	
+	private Resource populateResourceObject(Resource resource, JdbcTemplate template){
+		
+		ResourceWrapper resourceWrapper = new ResourceWrapper(resource);
+		
+		if(!resourceWrapper.getSimpleArrayFields().isEmpty()){
+			// This is an array of simple type - fetch and add to resource
+			for(Field field : resourceWrapper.getSimpleArrayFields()){
+				List<?> valueList = template.queryForList(MySQLQueryCreatorUtil.formRetrieveSimpleArrayQuery(resource, field),
+						resourceWrapper.getComponentType(field.getName()));
+				resourceWrapper.setFieldValue(field.getName(), valueList);
+			}
+		}
+		
+		if(!resourceWrapper.getNestedResourceArrayFields().isEmpty()){
+			// This is an array of nested type - fetch and add nested type
+			for(Field field : resourceWrapper.getNestedResourceArrayFields()){
+				List<Integer> nestedIds = template.queryForList(MySQLQueryCreatorUtil.formRetrieveNestedArrayQuery(resource, field), int.class);
+				List<Object> nestedObjects = new ArrayList<>();
+				
+				nestedIds.forEach(nestedResID -> nestedObjects.add(resourceWrapper.getComponentInstance(field, nestedResID)));
+				resourceWrapper.setFieldValue(field.getName(), nestedObjects);
+			}
+		}
+		
+		if(!resourceWrapper.getNestedResourceFields().isEmpty()){
+			// This is a single valued nested resource
+			for(Field field : resourceWrapper.getNestedResourceFields()){
+				int nestedResourceId = template.queryForObject(MySQLQueryCreatorUtil.formRetrieveNestedObject(resource, field), int.class);
+				resourceWrapper.setFieldValue(field.getName(), resourceWrapper.getComponentInstance(field, nestedResourceId));
+			}
+	    }
+		
+		return resourceWrapper.getResource();
+	}
+	
+	@Override
+	public List<Resource> retrieveAllWithFilter(Resource resource, SearchCriteria searchCriteria,SearchCriteria sortCriteria, int batchSize, int startIndex) {
+		try{
+			JdbcTemplate template = new JdbcTemplate(dataSource);
+			List<Resource> results = template.query(MySQLQueryCreatorUtil.formRetriveWithFilterQuery(resource, searchCriteria, sortCriteria, batchSize, startIndex, searchQueryBuilder),new BeanPropertyRowMapper(resource.getResourceClass()));
+		
+			for (Resource result : results) {
+				populateResourceObject(result, template);
+			}
+			return results;
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new RuntimeException(e.getMessage());
+		}
 	}
 
 	@Override
@@ -174,105 +128,93 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 		KeyHolder holder = new GeneratedKeyHolder();
 		NamedParameterJdbcTemplate namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
 
-		Map<String, List<String>> nestedResourceKeyMap = new HashMap<>();
-		Map<String, Object[]> normalArrayFieldMap = new HashMap<>();
+		Map<String, List<String>> nestedResourceArrayKeyMap = new HashMap<>();
+		Map<String, Object> simpleAndResourceFieldValues = new HashMap<>();
 
 		try {
-			Map<String, Object> allFieldValues = new HashMap<>();
-			for (Field field : resource.getClass().getDeclaredFields()) {
-
-				if (field.getType().isArray() && field.getType().getComponentType().getInterfaces() != null
-						&& Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class)) {
-
-					// This is an Array of nested resources - Insert all the
-					// nested resources first
-					Resource[] nestedResources = (Resource[]) MethodUtils.invokeExactMethod(resource,
-							getMethodName(field.getName()));
-					if (nestedResources != null && nestedResources.length > 0) {
-						String tableName = resource.getResourceName().toUpperCase() + "_"
-								+ field.getName().toUpperCase() + "_" + "INFO";
-						List<String> keyList = new ArrayList<>();
-						for (Resource nestedResource : nestedResources) {
-							nestedResource = save(nestedResource);
-							keyList.add((String) MethodUtils.invokeExactMethod(nestedResource, "getId"));
+			ResourceWrapper resourceWrapper = new ResourceWrapper(resource);
+			
+			if(!resourceWrapper.getNestedResourceArrayFields().isEmpty()){
+				// This is an array of nested type - fetch and add nested type
+				for(Field field : resourceWrapper.getNestedResourceArrayFields()){
+					Resource[] nestedResourceObjects = (Resource[]) resourceWrapper.getFieldValue(field.getName());
+					if(nestedResourceObjects != null && nestedResourceObjects.length != 0){
+						String tableName = resource.getResourceName().toUpperCase() + "_" + field.getName().toUpperCase() + "_" + "INFO";
+						List<String> nestedResourceKeys = new ArrayList<>();
+						for (Resource nestedResourceObject : nestedResourceObjects) {
+							nestedResourceObject = save(nestedResourceObject);
+							nestedResourceKeys.add(nestedResourceObject.getId());
 						}
-						nestedResourceKeyMap.put(tableName, keyList);
+						nestedResourceArrayKeyMap.put(tableName, nestedResourceKeys);
 					}
-
-				} else if (field.getType().isArray()
-						&& (field.getType().getComponentType().getInterfaces() == null || !Arrays
-								.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) { // Check
-																															// for
-																															// primitive
-																															// type
-
-					// This field is a Array of non resource objects
-					String tableName = resource.getResourceName().toUpperCase() + "_" + field.getName().toUpperCase()
-							+ "_DATA";
-					Object[] arrayFieldValues = (Object[]) MethodUtils.invokeExactMethod(resource,
-							getMethodName(field.getName()));
-					if (arrayFieldValues != null && arrayFieldValues.length > 0) {
-						normalArrayFieldMap.put(tableName, arrayFieldValues);
-					}
-
-				} else if (field.getType().getInterfaces() != null
-						&& Arrays.asList(field.getType().getInterfaces()).contains(Resource.class)) {
-
-					// This is an embedded resource - save and retrieve the
-					// unique id first
-					Resource nestedResource = (Resource) MethodUtils.invokeExactMethod(resource,
-							getMethodName(field.getName()));
+				}
+			}
+			
+			if(!resourceWrapper.getNestedResourceFields().isEmpty()){
+				// This is a single valued nested resource
+				for(Field field : resourceWrapper.getNestedResourceFields()){
+					Resource nestedResource = (Resource)resourceWrapper.getFieldValue(field.getName());
 					if (nestedResource != null) {
 						nestedResource = save(nestedResource);
-						allFieldValues.put(field.getName(), MethodUtils.invokeExactMethod(nestedResource, "getId"));
+						simpleAndResourceFieldValues.put(field.getName(), nestedResource.getId());
 					}
-				} else {
-					// This is a normal field - get the field value
-					field.setAccessible(true);
-					allFieldValues.put(field.getName(), field.get(resource));
+				}
+		    }
+			
+			if(!resourceWrapper.getSimpleFields().isEmpty()){
+				// This is a simple field
+				for(Field field : resourceWrapper.getSimpleFields()){
+					simpleAndResourceFieldValues.put(field.getName(), resourceWrapper.getFieldValue(field.getName()));
 				}
 			}
-
-			// Save the root resource
-			SqlParameterSource namedParameters = new MapSqlParameterSource(allFieldValues);
-			namedParameterJdbcTemplate.update(
-					MySQLQueryCreatorUtil.formInsertQuery(resource.getResourceName(), resource.getResourceClass()),
-					namedParameters, holder);
-			MethodUtils.invokeExactMethod(resource, "setId", holder.getKey().toString());
-
-			if (!nestedResourceKeyMap.isEmpty() || !normalArrayFieldMap.isEmpty()) {
-				JdbcTemplate jdbcInsertTemplate = new JdbcTemplate(dataSource);
-
-				// Root resource has been successfully inserted - add all array
-				// of multi-valued nested resource relations
-				for (Map.Entry<String, List<String>> entry : nestedResourceKeyMap.entrySet()) {
+			
+			
+			// Save the Root resource
+			SqlParameterSource namedParameters = new MapSqlParameterSource(simpleAndResourceFieldValues);
+			namedParameterJdbcTemplate.update(MySQLQueryCreatorUtil.formInsertQuery(resource.getResourceName(), resource.getResourceClass()),
+					                          namedParameters, holder);
+			resourceWrapper.setFieldValue("id", holder.getKey().toString());
+			
+			JdbcTemplate jdbcInsertTemplate = new JdbcTemplate(dataSource);
+			
+			if (!nestedResourceArrayKeyMap.isEmpty()) {
+				// Root resource has been successfully inserted - add all key relationships for nested resource arrays 
+				for (Map.Entry<String, List<String>> entry : nestedResourceArrayKeyMap.entrySet()) {
 					String[] columns = entry.getKey().split("_");
-					for (String nestedKey : entry.getValue()) {
+					for (String nestedResourceKey : entry.getValue()) {
 						String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
-								entry.getKey(), columns[0].toLowerCase(), columns[1].toLowerCase(),
-								holder.getKey().toString(), nestedKey);
-						jdbcInsertTemplate.execute(query);
-					}
-				}
-
-				// Add all primitives
-				for (Map.Entry<String, Object[]> entry : normalArrayFieldMap.entrySet()) {
-					String[] columns = entry.getKey().split("_");
-					for (Object arrayValue : entry.getValue()) {
-						String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
-								entry.getKey(), columns[0].toLowerCase(), columns[1].toLowerCase(),
-								holder.getKey().toString(), "'" + arrayValue + "'");
+								                     entry.getKey(), columns[0].toLowerCase(), columns[1].toLowerCase(),
+								                     holder.getKey().toString(), nestedResourceKey);
 						jdbcInsertTemplate.execute(query);
 					}
 				}
 			}
-
+			
+			if(!resourceWrapper.getSimpleArrayFields().isEmpty()){
+				// This is an array of simple type - fetch and add to resource
+				for(Field field : resourceWrapper.getSimpleArrayFields()){
+					String tableName = resource.getResourceName().toUpperCase() + "_" + field.getName().toUpperCase() + "_DATA";
+					Object[] arrayFieldValues = (Object[]) resourceWrapper.getFieldValue(field.getName());
+					if (arrayFieldValues != null && arrayFieldValues.length > 0) {
+						for(Object arrayFieldValue : arrayFieldValues){
+							String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
+									                     tableName, 
+									                     resource.getResourceName().toLowerCase(), 
+									                     field.getName().toLowerCase(),
+									                     resource.getId(), 
+									                     "'" + arrayFieldValue + "'");
+							jdbcInsertTemplate.execute(query);	
+						}
+					}
+				}
+			}			
+			
+			return resourceWrapper.getResource();
 		} catch (Exception e) {
 			e.printStackTrace();
 			throw new RuntimeException(e.getMessage());
 		}
 
-		return resource;
 	}
 
 	@Override
@@ -280,203 +222,122 @@ public class MySQLPersistanceHelperImpl implements PersistanceHelper {
 	public void delete(String id, Resource resource) {
 		JdbcTemplate template = new JdbcTemplate(dataSource);
 		
-		Field[] fields = resource.getResourceClass().getDeclaredFields();
-		//Delete all the array entries of simple types
-		for(Field field : fields){
-			if(field.getType().isArray() && !Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class)){
+		ResourceWrapper resourceWrapper = new ResourceWrapper(resource);
+		if(!resourceWrapper.getSimpleArrayFields().isEmpty()){
+		    //Delete all entries for Simple Array fields
+			for(Field field : resourceWrapper.getSimpleArrayFields()){
 				String arrayDelQuery = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
-						                     resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_DATA", 
-						                     resource.getResourceName().toLowerCase(), id);
-				template.execute(arrayDelQuery);
-			}else if(field.getType().isArray()){
-				String arrayDelQuery = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
-	                     resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_INFO", 
-	                     resource.getResourceName().toLowerCase(), id);
+													 resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_DATA", 
+													 resource.getResourceName().toLowerCase(), id);
 				template.execute(arrayDelQuery);
 			}
 		}
 		
-		//Now delete the actual resource
-		String query = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
-                resource.getResourceName().toUpperCase(), 
-                "id", id);
+		if(!resourceWrapper.getNestedResourceArrayFields().isEmpty()){
+			//Delete all entries for Resource Array fields
+			for(Field field : resourceWrapper.getNestedResourceArrayFields()){
+				String arrayDelQuery = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , 
+													 resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_INFO", 
+													 resource.getResourceName().toLowerCase(), id);
+				template.execute(arrayDelQuery);
+			}
+		}
+		
+		//Delete the actual resource
+		String query = String.format(MySQLQueryCreatorUtil.formDeleteQuery() , resource.getResourceName().toUpperCase(), "id", id);
 		template.execute(query);
 		
-	}
-
-	@Override
-	public List<Resource> retrieveAllWithFilter(Resource resource, SearchCriteria searchCriteria,SearchCriteria sortCriteria, int batchSize, int startIndex) {
-		
-		JdbcTemplate template = new JdbcTemplate(dataSource);
-		List<Resource> results = template.query(MySQLQueryCreatorUtil.formRetriveWithFilterQuery(resource, searchCriteria,
-					sortCriteria, batchSize, startIndex, searchQueryBuilder),new BeanPropertyRowMapper(resource.getResourceClass()));
-		
-		try{
-			for (Resource result : results) {
-				
-				for (Field field : resource.getResourceClass().getDeclaredFields()) {
-
-					if (field.getType().isArray() && (field.getType().getComponentType().getInterfaces() == null
-							|| !Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-						// This is an array of simple type - fetch and add to resource
-						List arrayValues = template.queryForList(
-								MySQLQueryCreatorUtil.formRetrieveSimpleArrayQuery(result, field),
-								field.getType().getComponentType());
-						field.setAccessible(true);
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-								(Object) arrayValues.toArray((Object[]) Array.newInstance(field.getType().getComponentType(), arrayValues.size())));
-					} else if (field.getType().isArray() && (field.getType().getComponentType().getInterfaces() != null
-							&& Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class))) {
-						// This is an array of nested type - fetch and add nested type
-						List<Integer> arrayValues = template.queryForList(
-								MySQLQueryCreatorUtil.formRetrieveNestedArrayQuery(result, field), int.class);
-						List<Object> nestedObjects = new ArrayList<>();
-
-						for (int nestedId : arrayValues) {
-							Object ob = field.getType().getComponentType().newInstance();
-							MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(nestedId));
-							nestedObjects.add(ob);
-						}
-
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()),
-								(Object) nestedObjects.toArray((Object[]) Array
-										.newInstance(field.getType().getComponentType(), nestedObjects.size())));
-					} else if (!field.getType().isArray() && (field.getType().getInterfaces() != null
-							&& Arrays.asList(field.getType().getInterfaces()).contains(Resource.class))) {
-						// This is a single valued nested resource
-						int objectId = template.queryForObject(
-								MySQLQueryCreatorUtil.formRetrieveNestedObject(result, field), int.class);
-						Object ob = field.getType().newInstance();
-						MethodUtils.invokeExactMethod(ob, "setId", String.valueOf(objectId));
-						MethodUtils.invokeExactMethod(result, formSetMethodname(field.getName()), ob);
-					}
-				}
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			throw new RuntimeException(e.getMessage());
-		}
-		
-		return results;
 	}
 
 	@Override
 	@Transactional
 	public Resource update(String id, Resource resource, Map<String, Map<String, List<Object>>> operationsMap) {
 		NamedParameterJdbcTemplate namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
-		SqlParameterSource namedParameters = new BeanPropertySqlParameterSource(resource);
-		namedParameterJdbcTemplate.update(MySQLQueryCreatorUtil.formUpdateQuery(resource), namedParameters);
 		
 		try{
+			ResourceWrapper resourceWrapper = new ResourceWrapper(resource);
+			
+			SqlParameterSource namedParameters = new BeanPropertySqlParameterSource(resource);
+			namedParameterJdbcTemplate.update(MySQLQueryCreatorUtil.formUpdateQuery(resource), namedParameters);
+			
 			JdbcTemplate jdbcInsertTemplate = new JdbcTemplate(dataSource);
 			//First clear out all array entries that are set to null
-			List<Field> allFields = Arrays.asList(resource.getResourceClass().getDeclaredFields());
-			for(Field f : allFields){
-				if(!f.getType().isArray())
-					continue;
-				f.setAccessible(true);
-				if(!(MethodUtils.invokeExactMethod(resource, getMethodName(f.getName()), new Object[]{}) == null))
-					continue;
-				
-				//delete all the array values
-				if(Arrays.asList(f.getType().getComponentType().getInterfaces()).contains(Resource.class)){
-					String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
-		                                        resource.getResourceName().toUpperCase()+"_"+f.getName().toUpperCase()+"_INFO",
-		                                        resource.getResourceName().toLowerCase(), resource.getId());
-					jdbcInsertTemplate.execute(query);
-				}else{
-					String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
-												resource.getResourceName().toUpperCase()+"_"+f.getName().toUpperCase()+"_DATA",
-					                            resource.getResourceName().toLowerCase(), resource.getId()
-		                                        );
-					jdbcInsertTemplate.execute(query);
+			
+			if(!resourceWrapper.getSimpleArrayFields().isEmpty()){
+				for(Field field : resourceWrapper.getSimpleArrayFields()){
+					if(resourceWrapper.getFieldValue(field.getName()) == null){
+						String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
+                                                     resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_DATA",
+                                                     resource.getResourceName().toLowerCase(), id);
+						jdbcInsertTemplate.execute(query);
+					}
 				}
 			}
 			
+			if(!resourceWrapper.getNestedResourceArrayFields().isEmpty()){
+				for(Field field : resourceWrapper.getNestedResourceArrayFields()){
+					if(resourceWrapper.getFieldValue(field.getName()) == null){
+						String query = String.format(MySQLQueryCreatorUtil.formClearArrayQuery(),
+													 resource.getResourceName().toUpperCase()+"_"+field.getName().toUpperCase()+"_INFO",
+													 resource.getResourceName().toLowerCase(), id);
+						jdbcInsertTemplate.execute(query);
+					}
+				}
+			}
 			
+
 			for(Entry<String, Map<String, List<Object>>> entry : operationsMap.entrySet()){
+				if(resourceWrapper.isSimpleArray(entry.getKey())){
 					
-				Field field = resource.getResourceClass().getDeclaredField(entry.getKey());
-					if(!Arrays.asList(field.getType().getComponentType().getInterfaces()).contains(Resource.class)){
-						for(Entry<String, List<Object>> opValueEntry : entry.getValue().entrySet()){
-							for(Object value : opValueEntry.getValue()){
-								
-								if(opValueEntry.getKey().equals("add")){
-									String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
+					for(Entry<String, List<Object>> opValueEntry : entry.getValue().entrySet()){
+						for(Object value : opValueEntry.getValue()){
+							
+							if(opValueEntry.getKey().equals(ResourceConstants.OPERATIONS_ADD)){
+								String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
+									                         resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_DATA", 
+									                         resource.getResourceName().toLowerCase(),
+									                         entry.getKey().toLowerCase(), id, value);
+								jdbcInsertTemplate.execute(query);
+							}else{
+								String query = String.format(MySQLQueryCreatorUtil.formUpdateQueryForRemoveArrayValue(),
 										                     resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_DATA", 
 										                     resource.getResourceName().toLowerCase(),
-										                     entry.getKey().toLowerCase(),
-										                     resource.getId(), value);
-									jdbcInsertTemplate.execute(query);
-								}else{
-									String query = String.format(MySQLQueryCreatorUtil.formUpdateQueryForRemoveArrayValue(),
-											                     resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_DATA", 
-											                     resource.getResourceName().toLowerCase(),
-											                     resource.getId(),
-											                     entry.getKey().toLowerCase(),
-											                     value);
-									jdbcInsertTemplate.execute(query);
-								}
-							}
-						}
-					}else{
-						for(Entry<String, List<Object>> opValueEntry : entry.getValue().entrySet()){
-							for(Object value : opValueEntry.getValue()){
-								
-								if(opValueEntry.getKey().equals("add")){
-									String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
-										                         resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_INFO", 
-										                         resource.getResourceName().toLowerCase(),
-										                         entry.getKey().toLowerCase(),
-										                         resource.getId(), value);
-									jdbcInsertTemplate.execute(query);
-								}else{
-									String query = String.format(MySQLQueryCreatorUtil.formUpdateQueryForRemoveArrayValue(),
-											                     resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_INFO", 
-											                     resource.getResourceName().toLowerCase(),
-											                     resource.getId(),
-											                     entry.getKey().toLowerCase(),
-											                     value);
-									jdbcInsertTemplate.execute(query);
-								}
+										                     id, entry.getKey().toLowerCase(), value);
+								jdbcInsertTemplate.execute(query);
 							}
 						}
 					}
+				} else{
 					
+					for(Entry<String, List<Object>> opValueEntry : entry.getValue().entrySet()){
+						for(Object value : opValueEntry.getValue()){
+							
+							if(opValueEntry.getKey().equals(ResourceConstants.OPERATIONS_ADD)){
+								String query = String.format(MySQLQueryCreatorUtil.formInsertQueryForLinkedTable(),
+									                         resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_INFO", 
+									                         resource.getResourceName().toLowerCase(),
+									                         entry.getKey().toLowerCase(), id, value);
+								jdbcInsertTemplate.execute(query);
+							}else{
+								String query = String.format(MySQLQueryCreatorUtil.formUpdateQueryForRemoveArrayValue(),
+										                     resource.getResourceName().toUpperCase()+"_"+entry.getKey().toUpperCase()+"_INFO", 
+										                     resource.getResourceName().toLowerCase(),
+										                     id, entry.getKey().toLowerCase(), value);
+								jdbcInsertTemplate.execute(query);
+							}
+						}
+					}
+				}
 			}
+			
+			return resourceWrapper.getResource();
 		}catch(Exception ex){
+			ex.printStackTrace();
 			throw new RuntimeException(ex);
 		}
-		return resource;
-	}
-
-	private static String getMethodName(String key) {
-		key = key.toUpperCase().charAt(0) + key.substring(1);
-		return "get" + key;
-	}
-
-	private static String formSetMethodname(String fieldName) {
-		fieldName = fieldName.toUpperCase().charAt(0) + fieldName.substring(1);
-		return "set" + fieldName.replace("()", "");
+		
 	}
 
 }
 
-class RelationshipKeyHolder {
-	private String key1;
-	private String key2;
 
-	public RelationshipKeyHolder(String key1, String key2) {
-		this.key1 = key1;
-		this.key2 = key2;
-	}
-
-	public String getKey1() {
-		return key1;
-	}
-
-	public String getKey2() {
-		return key2;
-	}
-
-}
